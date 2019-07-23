@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+from scipy.sparse import csr_matrix
 import nltk
 import math
 
@@ -18,7 +19,9 @@ def process_x(inputs, vocabulary, settings):
     result = list()
     for token in nltk.wordpunct_tokenize(inputs):
         result.append(0 if token not in vocabulary else 1 + vocabulary.index(token))
-    return np.pad(result[:settings['encoder_inputs']], (0, settings['encoder_inputs'] - len(result)), mode='constant')
+    return result[:settings['encoder_inputs']]\
+            + [0] * (settings['encoder_inputs'] - len(result))
+         
 
 
 def process_y(outputs, vocabulary, settings):
@@ -28,7 +31,8 @@ def process_y(outputs, vocabulary, settings):
         if token in vocabulary:
             y[vocabulary.index(token)] = 1
         result.append(y)
-    return np.pad(result[:len(vocabulary)], (0, len(vocabulary) - len(result)), mode='constant')
+        return result[:len(vocabulary)]\
+                + [np.zeros(len(vocabulary))] * (settings['encoder_inputs'] - len(result))
 
 
 def convert_raw(data, vocabulary, settings):

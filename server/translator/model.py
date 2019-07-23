@@ -1,18 +1,19 @@
 import tensorflow as tf
 import translator.data
 import numpy as np
-
+    
 
 def create_default_model(settings, inputs_vocabulary_size, outputs_vocabulary_size):
-        inputs = tf.keras.layers.Input((settings['encoder_inputs'], ), name="encoder_inputs")
-        embedding = tf.keras.layers.Embedding(inputs_vocabulary_size + 1, settings['embedding_size'])(inputs)
-        encoder = tf.keras.layers.GRU(settings['units'], name="encoder", return_sequences=True)(embedding)
-        decoder = tf.keras.layers.GRU(settings['units'], name='decoder', return_sequences=True)(encoder)
-        decoder_attention = tf.keras.layers.Attention(name="decoder_attention")([encoder, decoder])
-        outputs = tf.keras.layers.Dense(outputs_vocabulary_size, activation='softmax', name="outputs")(decoder_attention)
-        model = tf.keras.Model(inputs=inputs, outputs=outputs)
-        model.compile(settings['optimizer'], settings['loss'], settings['metrics'])
-        return model
+    inputs = tf.keras.layers.Input((settings['encoder_inputs'], ), name="encoder_inputs")
+    embedding = tf.keras.layers.Embedding(inputs_vocabulary_size + 1, settings['embedding_size'])(inputs)
+    encoder = tf.keras.layers.GRU(settings['units'], name="encoder", return_sequences=True)(embedding)
+    decoder = tf.keras.layers.GRU(settings['units'], name='decoder', return_sequences=True)(encoder)
+    decoder_attention = tf.keras.layers.Attention(name="decoder_attention")([encoder, decoder])
+    outputs = tf.keras.layers.Dense(outputs_vocabulary_size, activation='softmax', name="vocabulary")(decoder_attention)
+
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    model.compile(settings['optimizer'], settings['loss'], settings['metrics'])
+    return model
 
 
 class TranslationModel:
@@ -32,6 +33,7 @@ class TranslationModel:
                         if validation_x is not None and validation_y is not None else None
         if self.model is None:
             self.model = create_default_model(self.settings, len(self.x_vocabulary), len(self.y_vocabulary))
+        tf.keras.utils.plot_model(self.model, "model.png", show_shapes=True)
         with tf.Session() as session:
             tf.keras.backend.set_session(session)
             self.model.fit_generator(train, validation_data=validation, epochs=epochs, callbacks=[
@@ -57,7 +59,7 @@ if __name__ == '__main__':
             "encoder_cells": 3,
             "decoder_cells": 3,
             "optimizer": "rmsprop",
-            "loss": "sparse_categorical_crossentropy",
+            "loss": "categorical_crossentropy",
             "batch_size": 32,
             "epochs": 3,
             "case_sensitive": False,
