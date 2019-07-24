@@ -1,8 +1,10 @@
 import tensorflow as tf
 import numpy as np
 from scipy.sparse import csr_matrix
+import itertools
 import nltk
 import math
+
 
 def make_vocabulary(corpus, case_sensitive, vocabulary_cutoff):
     occurrences = dict()
@@ -15,24 +17,29 @@ def make_vocabulary(corpus, case_sensitive, vocabulary_cutoff):
     return list(sorted(occurrences, key=occurrences.get, reverse=True))[:vocabulary_cutoff]
 
 
-def process_x(inputs, vocabulary, settings):
+def process_x(inputs, vocabulary, encoder_inputs):
     result = list()
     for token in nltk.wordpunct_tokenize(inputs):
+        if len(result) == encoder_inputs:
+            break
         result.append(0 if token not in vocabulary else 1 + vocabulary.index(token))
-    return result[:settings['encoder_inputs']]\
-            + [0] * (settings['encoder_inputs'] - len(result))
-         
+    while len(result) < encoder_inputs:
+        result.append(0)
+    return result         
 
 
-def process_y(outputs, vocabulary, settings):
+def process_y(outputs, vocabulary, encoder_inputs):
     result = list()
     for token in nltk.wordpunct_tokenize(outputs):
-        y = np.zeros(len(vocabulary))
+        if len(result) == encoder_inputs:
+            break
+        y = np.full(len(vocabulary), False)
         if token in vocabulary:
-            y[vocabulary.index(token)] = 1
+            y[vocabulary.index(token)] = True
         result.append(y)
-        return result[:len(vocabulary)]\
-                + [np.zeros(len(vocabulary))] * (settings['encoder_inputs'] - len(result))
+    while len(result) < encoder_inputs:
+        result.append(np.full(len(vocabulary), False))
+    return np.asarray(result)
 
 
 def convert_raw(data, vocabulary, settings):
@@ -50,25 +57,11 @@ def load_corpus(path):
     return corpus
 
 
-class Dataset(tf.keras.utils.Sequence):
-
-    def __init__(self, x_corpus, y_corpus, x_vocab, y_vocab, settings):
-        self.x_corpus = x_corpus
-        self.y_corpus = y_corpus
-        self.x_vocab = x_vocab
-        self.y_vocab = y_vocab
-        self.settings = settings
-
-    def __len__(self):
-        return int(math.ceil(len(self.x_corpus) // self.settings['batch_size']))
-
-    def __getitem__(self, index):
-        start = index * self.settings['batch_size']
-        end = (index + 1) * self.settings['batch_size']
-        x = [process_x(sample, self.x_vocab, self.settings) for sample in self.x_corpus[start:end]]
-        y = [process_y(sample, self.y_vocab, self.settings) for sample in self.y_corpus[start:end]]
-        for n in range(len(x)):
-            if len(x[n]) == 0 or len(y[n]) == 0:
-                x.pop(n)
-                y.pop(n)
-        return np.asarray(x), np.asarray(y)
+def dataset_generator(x_corpus, y_corpus, x_vocab, y_vocab, batch_size, encoder_inputs):
+    def generator():
+        for index in range(len(x_corpus) // batch_size):
+            start = index * batch_size
+            end = (index + 1) * batch_size
+            yield [process_x(sample, x_vocab, encoder_inputs) for sample in x_corpus[start:end]],\
+                  [process_y(y_corpus[index], y_vocab, encoder_inputs).tolist() for sample in y_corpus[start:end]]
+    return tf.data.Dataset.from_generator(generator, (tf.int64, tf.bool), (tf.TensorShape([None, encoder_inputs]), tf.TensorShape([None, encoder_inputs, len(y_vocab)])))
