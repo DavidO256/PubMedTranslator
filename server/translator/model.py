@@ -1,24 +1,21 @@
-import tensorflow as tf
+from tensorflow.keras.layers import Input, Embedding, Bidirectional, Attention, Dense, CuDNNGRU
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras import Model
 import translator.data
 import numpy as np
 
 
 def create_default_model(settings, inputs_vocabulary_size, outputs_vocabulary_size):
-    inputs = tf.keras.layers.Input((settings['encoder_inputs'], ), name="encoder_inputs")
-    embedding = tf.keras.layers.Embedding(inputs_vocabulary_size + 1, settings['embedding_size'])(inputs)
-    encoder = tf.keras.layers.CuDNNGRU(settings['units'], name="encoder", return_sequences=True)(embedding)
-    decoder = tf.keras.layers.CuDNNGRU(settings['units'], name='decoder', return_sequences=True)(encoder)
-    decoder_attention = tf.keras.layers.Attention(name="decoder_attention")([encoder, decoder])
-    outputs = tf.keras.layers.Dense(outputs_vocabulary_size, activation='softmax', name="vocabulary")(decoder_attention)
-    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    inputs = Input((settings['encoder_inputs'], ), name="encoder_inputs")
+    embedding = Embedding(inputs_vocabulary_size + 1, settings['embedding_size'])(inputs)
+    encoder = Bidirectional(CuDNNGRU(settings['units'], name="encoder", return_sequences=True))(embedding)
+    decoder = CuDNNGRU(2 * settings['units'], name='decoder', return_sequences=True)(encoder)
+    decoder_attention = Attention(name="decoder_attention")([encoder, decoder])
+    outputs = Dense(outputs_vocabulary_size, activation='softmax', name="vocabulary")(decoder_attention)
+    model = Model(inputs=inputs, outputs=outputs)
     model.compile(settings['optimizer'], settings['loss'], settings['metrics'])
     return model
-
-
-def convert_estimator(model):
-    config = tf.estimator.RunConfig(train_distribute=tf.contrib.distribute.MirroredStrategy())
-    return tf.keras.estimator.model_to_estimator(keras_model=model, config=config, model_dir='tmp/model_dir')
-
+    
 
 class TranslationModel:
 
@@ -34,7 +31,6 @@ class TranslationModel:
             raise ValueError("Error fitting model: x and y vocabulary must be initialized before or during fitting.")
         if self.model is None:
             self.model = create_default_model(self.settings, len(self.x_vocabulary), len(self.y_vocabulary))
-            tf.keras.utils.plot_model(self.model, "model.png", show_shapes=True)
         train_dataset = translator.data.Dataset(x_corpus, y_corpus, self.x_vocabulary, self.y_vocabulary, self.settings)
         fit_kwargs = { 'epochs': epochs, 'callbacks': callbacks }
         if validation_x is not None and validation_y is not None:
@@ -57,7 +53,7 @@ if __name__ == '__main__':
     m = TranslationModel({
             "encoder_inputs": 64,
             "embedding_size": 256,
-            "units": 128,
+            "units": 256,
             "encoder_cells": 3,
             "decoder_cells": 3,
             "optimizer": "rmsprop",
@@ -69,6 +65,6 @@ if __name__ == '__main__':
     raw_validation_x = translator.data.load_corpus("../datasets/raw/validation_ger_x.txt")
     raw_validation_y = translator.data.load_corpus("../datasets/raw/validation_ger_y.txt")
     m.fit(raw_x, raw_y, validation_x=raw_validation_x, validation_y=raw_validation_y, epochs=30,
-            callbacks=[tf.keras.callbacks.ModelCheckpoint("../models/weights-{epoch:02d}-{val_loss:.3f}.hdf5"),
-                        tf.keras.callbacks.EarlyStopping(min_delta=0.0001, patience=2),
-                        tf.keras.callbacks.ReduceLROnPlateau(), tf.keras.callbacks.TensorBoard("tensorboard/", write_graph=True)])
+            callbacks=[ModelCheckpoint("../models/weights-{epoch:02d}-{val_loss:.3f}.hdf5"),
+                        EarlyStopping(min_delta=0.0001, patience=2),
+                        ReduceLROnPlateau()])
