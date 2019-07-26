@@ -42,7 +42,7 @@ def process_y(outputs, vocabulary, encoder_inputs):
 def convert_raw(data, vocabulary, settings):
     result = list()
     for vector in data:
-        result.append(vocabulary[sum(vector * np.arange(len(vocabulary),))])
+            result.append(vocabulary[np.argmax(vector)] if sum(vector) > 0 else "[UNK]")
     return " ".join(result)
 
 
